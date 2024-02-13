@@ -45,9 +45,17 @@ res_dict = {"resnet18":models.resnet18, "resnet34":models.resnet34, "resnet50":m
 "resnet101":models.resnet101, "resnet152":models.resnet152, "resnext50":models.resnext50_32x4d, "resnext101":models.resnext101_32x8d}
 
 class ResBase(nn.Module):
-    def __init__(self, res_name):
+    def __init__(self, res_name, path=None):
         super(ResBase, self).__init__()
         model_resnet = res_dict[res_name](pretrained=True)
+        if path:
+            model_resnet = nn.Sequential(
+                OrderedDict([
+                    ('model', model_resnet),
+                ])
+            )
+            model_resnet.load_state_dict(torch.load(path)['model'], strict=False)  # 没有normalize
+            model_resnet = model_resnet.model
         self.conv1 = model_resnet.conv1
         self.bn1 = model_resnet.bn1
         self.relu = model_resnet.relu

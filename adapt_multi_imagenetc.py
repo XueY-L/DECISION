@@ -1,5 +1,5 @@
 '''
-python adapt_multi.py --dset office-home --t 1 --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt
+python adapt_multi_imagenetc.py --dset imagenetc --t 0 --max_epoch 30 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt  --batch_idx 1
 '''
 import argparse
 import os, sys
@@ -18,6 +18,10 @@ from tqdm import tqdm
 from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
 
+from robustbench.data import load_imagenetc
+from robustbench.utils import load_model
+from robustbench.model_zoo.enums import ThreatModel
+
 def op_copy(optimizer):
     for param_group in optimizer.param_groups:
         param_group['lr0'] = param_group['lr']
@@ -32,48 +36,12 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['nesterov'] = True
     return optimizer
 
-def image_train(resize_size=256, crop_size=224, alexnet=False):
-  if not alexnet:
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                   std=[0.229, 0.224, 0.225])
-  else:
-    normalize = Normalize(meanfile='./ilsvrc_2012_mean.npy')
-  return  transforms.Compose([
-        transforms.Resize((resize_size, resize_size)),
-        transforms.RandomCrop(crop_size),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        normalize
-    ])
-
-def image_test(resize_size=256, crop_size=224, alexnet=False):
-  if not alexnet:
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                   std=[0.229, 0.224, 0.225])
-  else:
-    normalize = Normalize(meanfile='./ilsvrc_2012_mean.npy')
-  return  transforms.Compose([
-        transforms.Resize((resize_size, resize_size)),
-        transforms.CenterCrop(crop_size),
-        transforms.ToTensor(),
-        normalize
-    ])
-
 def data_load(args): 
-    ## prepare data
-    dsets = {}
     dset_loaders = {}
-    train_bs = args.batch_size
-    txt_tar = open(args.t_dset_path).readlines() 
-    txt_test = open(args.test_dset_path).readlines()  # 这俩是一样的啊？？？在这个上面训在这个上面测吗
-
-    dsets["target"] = ImageList_idx(txt_tar, transform=image_train())
-    dset_loaders["target"] = DataLoader(dsets["target"], batch_size=train_bs, shuffle=True, num_workers=args.worker, drop_last=False)
-    dsets['target_'] = ImageList_idx(txt_tar, transform=image_train())
-    dset_loaders['target_'] = DataLoader(dsets['target_'], batch_size=train_bs*3, shuffle=False, num_workers=args.worker, drop_last=False)  # 这干啥用？
-    dsets["test"] = ImageList_idx(txt_test, transform=image_test())
-    dset_loaders["test"] = DataLoader(dsets["test"], batch_size=train_bs*3, shuffle=False, num_workers=args.worker, drop_last=False)
-
+    dset_loaders["target"] = load_imagenetc(args.batch_size, 5, args.t_dset_path, False, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
+    dset_loaders["target_"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
+    dset_loaders["test"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='Res256Crop224', batch_idx=args.batch_idx)
+    
     return dset_loaders
 
 def train_target(args):
@@ -82,12 +50,12 @@ def train_target(args):
     if args.net[0:3] == 'res':
         netF_list = [network.ResBase(res_name=args.net).cuda() for i in range(len(args.src))]
     elif args.net[0:3] == 'vgg':
-        netF_list = [network.VGGBase(vgg_name=args.net).cuda() for i in range(len(args.src))] 
+        netF_list = [network.VGGBase(vgg_name=args.net).cuda() for i in range(len(args.src))]
 
     w = 2*torch.rand((len(args.src),))-1  # 权重？
     print(w)
 
-    netB_list = [network.feat_bottleneck(type=args.classifier, feature_dim=netF_list[i].in_features, bottleneck_dim=args.bottleneck).cuda() for i in range(len(args.src))] 
+    netB_list = [network.feat_bottleneck(type=args.classifier, feature_dim=netF_list[i].in_features, bottleneck_dim=args.bottleneck).cuda() for i in range(len(args.src))]
     netC_list = [network.feat_classifier(type=args.layer, class_num = args.class_num, bottleneck_dim=args.bottleneck).cuda() for i in range(len(args.src))]
     netG_list = [network.scalar(w[i]).cuda() for i in range(len(args.src))]
     print(netG_list)
@@ -227,6 +195,8 @@ def train_target(args):
                 torch.save(netB_list[i].state_dict(), osp.join(args.output_dir, "target_B_" + str(i) + "_" + args.savename + ".pt"))
                 torch.save(netC_list[i].state_dict(), osp.join(args.output_dir, "target_C_" + str(i) + "_" + args.savename + ".pt"))
                 torch.save(netG_list[i].state_dict(), osp.join(args.output_dir, "target_G_" + str(i) + "_" + args.savename + ".pt"))
+            if iter_num == max_iter:
+                return acc
 
 def obtain_label(loader, netF, netB, netC, args):
     start_test = True
@@ -329,10 +299,11 @@ if __name__ == "__main__":
     parser.add_argument('--interval', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
-    parser.add_argument('--dset', type=str, default='office-caltech', choices=['office', 'office-home', 'office-caltech'])
+    parser.add_argument('--dset', type=str, default='office-caltech', choices=['office', 'office-home', 'office-caltech', 'imagenetc'])
     parser.add_argument('--lr', type=float, default=1*1e-2, help="learning rate")
     parser.add_argument('--net', type=str, default='resnet50', help="vgg16, resnet50, res101")
     parser.add_argument('--seed', type=int, default=2021, help="random seed")
+    parser.add_argument('--batch_idx', type=int, default=-1, help="")
  
     parser.add_argument('--gent', type=bool, default=True)
     parser.add_argument('--ent', type=bool, default=True)
@@ -346,27 +317,17 @@ if __name__ == "__main__":
     parser.add_argument('--epsilon', type=float, default=1e-5)
     parser.add_argument('--layer', type=str, default="wn", choices=["linear", "wn"])
     parser.add_argument('--classifier', type=str, default="bn", choices=["ori", "bn"])
-    parser.add_argument('--distance', type=str, default='cosine', choices=["euclidean", "cosine"])  
+    parser.add_argument('--distance', type=str, default='cosine', choices=["euclidean", "cosine"])
     parser.add_argument('--output', type=str, default='ckps/adapt_ours')
     parser.add_argument('--output_src', type=str, default='ckps/source')
     args = parser.parse_args()
     
-    if args.dset == 'office-home':
-        names = ['Art', 'Clipart', 'Product', 'Real_World']
-        args.class_num = 65
-    if args.dset == 'office':
-        names = ['amazon', 'dslr' , 'webcam']
-        args.class_num = 31
-    if args.dset == 'office-caltech':
-        names = ['amazon', 'caltech', 'dslr', 'webcam']
-        args.class_num = 10
+    args.dset = 'imagenetc'
+    names = 'gaussian_noise, shot_noise, impulse_noise, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression'.split(', ')
+    print(names)
+    args.class_num = 1000
 
-    args.src = []
-    for i in range(len(names)):
-        if i == args.t:
-            continue
-        else:
-            args.src.append(names[i])
+    args.src = ['gaussian_noise', 'glass_blur', 'snow', 'jpeg_compression']
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     SEED = args.seed
@@ -375,19 +336,15 @@ if __name__ == "__main__":
     np.random.seed(SEED)
     random.seed(SEED)
 
-    for i in range(len(names)):
-        if i != args.t:
-            continue
-        folder = 'data/'
-        args.t_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
-        args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
-        print(args.t_dset_path)
+    args.t_dset_path = '/home/yxue/datasets'
 
     args.output_dir_src = []  # 源模型的位置
     for i in range(len(args.src)):
-        args.output_dir_src.append(osp.join(args.output_src, args.dset, args.src[i][0].upper()))
+        args.output_dir_src.append(osp.join(args.output_src, args.dset, args.src[i]))
     print(args.output_dir_src)
-    args.output_dir = osp.join(args.output, args.dset, names[args.t][0].upper())
+    args.output_dir = osp.join(args.output, args.dset, names[args.t])
+
+    args.name_tar = names[args.t]
 
     if not osp.exists(args.output_dir):
         os.system('mkdir -p ' + args.output_dir)
@@ -396,5 +353,8 @@ if __name__ == "__main__":
 
     args.savename = 'par_' + str(args.cls_par)
 
-    train_target(args)
+    acc = train_target(args)
+    f = open(f'ggsj_target-{args.name_tar}.txt', 'a')
+    f.write(f'{str(acc)}\n')
+    f.close()
 

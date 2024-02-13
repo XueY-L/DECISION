@@ -1,5 +1,5 @@
 '''
-python train_source.py --dset office-home --s 3 --max_epoch 100 --trte val --gpu_id 2 --output ckps/source/
+python train_source_imagenetc.py --dset imagenetc --s 14 --max_epoch 100 --gpu_id 0 --output ckps/source/
 '''
 
 import argparse
@@ -21,6 +21,11 @@ from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
 
+from robustbench.data import load_imagenetc
+from robustbench.utils import load_model
+from robustbench.model_zoo.enums import ThreatModel
+
+
 def op_copy(optimizer):
     for param_group in optimizer.param_groups:
         param_group['lr0'] = param_group['lr']
@@ -35,59 +40,24 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['nesterov'] = True
     return optimizer
 
-def image_train(resize_size=256, crop_size=224, alexnet=False):
-  if not alexnet:
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                   std=[0.229, 0.224, 0.225])
-  else:
-    normalize = Normalize(meanfile='./ilsvrc_2012_mean.npy')
-  return  transforms.Compose([
-        transforms.Resize((resize_size, resize_size)),
-        transforms.RandomCrop(crop_size),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        normalize
-    ])
-
-def image_test(resize_size=256, crop_size=224, alexnet=False):
-  if not alexnet:
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                   std=[0.229, 0.224, 0.225])
-  else:
-    normalize = Normalize(meanfile='./ilsvrc_2012_mean.npy')
-  return  transforms.Compose([
-        transforms.Resize((resize_size, resize_size)),
-        transforms.CenterCrop(crop_size),
-        transforms.ToTensor(),
-        normalize
-    ])
-
 def data_load(args): 
-    ## prepare data
-    dsets = {}
+    train_loader = load_imagenetc(args.batch_size, 1, args.s_dset_path, True, [args.name_src], prepr='train')
+    test_loader = load_imagenetc(args.batch_size, 1, args.s_dset_path, True, [args.name_src], prepr='Res256Crop224')
+    num_train_batch = int(len(train_loader) * 0.9)
+
+    train_data, test_data = [], []
+    for i, (data, label, _) in enumerate(train_loader):
+        if i == num_train_batch: break
+        train_data.append((data, label))
+    for i, (data, label, _) in enumerate(test_loader):
+        if i < num_train_batch: continue
+        test_data.append((data, label))
+    print(len(train_data), len(test_data))
+
     dset_loaders = {}
-    train_bs = args.batch_size
-    txt_src = open(args.s_dset_path).readlines()
-    txt_test = open(args.test_dset_path).readlines()
-
-    if args.trte == "val":
-        dsize = len(txt_src)
-        tr_size = int(0.9*dsize)
-        # print(dsize, tr_size, dsize - tr_size)
-        tr_txt, te_txt = torch.utils.data.random_split(txt_src, [tr_size, dsize - tr_size])    # 从训练集里拿90%作为训练集，剩下的10%是验证集
-    else:
-        dsize = len(txt_src)
-        tr_size = int(0.9*dsize)
-        _, te_txt = torch.utils.data.random_split(txt_src, [tr_size, dsize - tr_size])
-        tr_txt = txt_src  # 训练集是整个集合，测试集是集合里的10%；前者包含后者？
-
-    dsets["source_tr"] = ImageList(tr_txt, transform=image_train())
-    dset_loaders["source_tr"] = DataLoader(dsets["source_tr"], batch_size=train_bs, shuffle=True, num_workers=args.worker, drop_last=False)
-    dsets["source_te"] = ImageList(te_txt, transform=image_test())
-    dset_loaders["source_te"] = DataLoader(dsets["source_te"], batch_size=train_bs, shuffle=True, num_workers=args.worker, drop_last=False)
-    dsets["test"] = ImageList(txt_test, transform=image_test())
-    dset_loaders["test"] = DataLoader(dsets["test"], batch_size=train_bs*2, shuffle=True, num_workers=args.worker, drop_last=False)
-
+    dset_loaders["source_tr"] = train_data
+    dset_loaders["source_te"] = test_data
+    
     return dset_loaders
 
 def cal_acc(loader, netF, netB, netC, flag=False):
@@ -95,7 +65,7 @@ def cal_acc(loader, netF, netB, netC, flag=False):
     with torch.no_grad():
         iter_test = iter(loader)
         for i in range(len(loader)):
-            data = iter_test.next()
+            data = iter_test.__next__()
             inputs = data[0]
             labels = data[1]
             inputs = inputs.cuda()
@@ -125,14 +95,19 @@ def cal_acc(loader, netF, netB, netC, flag=False):
 
 def train_source(args):
     dset_loaders = data_load(args)
+
     # set base network
+    path = f'/home/yxue/model_fusion_tta/imagenet/checkpoint/ckpt_[\'{args.name_src}\']_[1].pt'
+
     if args.net[0:3] == 'res':
-        netF = network.ResBase(res_name=args.net).cuda()  # 特征提取器
+        netF = network.ResBase(res_name=args.net, path=path).cuda()  # 特征提取器
     elif args.net[0:3] == 'vgg':
         netF = network.VGGBase(vgg_name=args.net).cuda()
 
     netB = network.feat_bottleneck(type=args.classifier, feature_dim=netF.in_features, bottleneck_dim=args.bottleneck).cuda()  # 分类器+BN
     netC = network.feat_classifier(type=args.layer, class_num = args.class_num, bottleneck_dim=args.bottleneck).cuda()  # 又是个分类器
+
+    print(netC.fc)
 
     # 模型的组成是 F->B->C
 
@@ -143,7 +118,7 @@ def train_source(args):
     for k, v in netB.named_parameters():
         param_group += [{'params': v, 'lr': learning_rate}]
     for k, v in netC.named_parameters():
-        param_group += [{'params': v, 'lr': learning_rate}]   
+        param_group += [{'params': v, 'lr': learning_rate}]
     optimizer = optim.SGD(param_group)
     optimizer = op_copy(optimizer)
 
@@ -158,10 +133,11 @@ def train_source(args):
 
     while iter_num < max_iter:
         try:
-            inputs_source, labels_source = iter_source.next()
+            inputs_source, labels_source = iter_source.__next__()
         except:
             iter_source = iter(dset_loaders["source_tr"])
-            inputs_source, labels_source = iter_source.next()
+            inputs_source, labels_source = iter_source.__next__()
+        # print(inputs_source.size(), labels_source.size())
 
         if inputs_source.size(0) == 1:
             continue
@@ -171,7 +147,7 @@ def train_source(args):
 
         inputs_source, labels_source = inputs_source.cuda(), labels_source.cuda()
         outputs_source = netC(netB(netF(inputs_source))) 
-        classifier_loss = CrossEntropyLabelSmooth(num_classes=args.class_num, epsilon=args.smooth)(outputs_source, labels_source)            
+        classifier_loss = CrossEntropyLabelSmooth(num_classes=args.class_num, epsilon=args.smooth)(outputs_source, labels_source)
         
         optimizer.zero_grad()
         classifier_loss.backward()
@@ -245,7 +221,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_epoch', type=int, default=20, help="max iterations")
     parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
-    parser.add_argument('--dset', type=str, default='office-home', choices=['office', 'office-home', 'office-caltech'])
+    parser.add_argument('--dset', type=str, default='office-home', choices=['office', 'office-home', 'office-caltech', 'imagenetc'])
     parser.add_argument('--lr', type=float, default=1e-2, help="learning rate")
     parser.add_argument('--net', type=str, default='resnet50', help="vgg16, resnet50, resnet101")
     parser.add_argument('--seed', type=int, default=2021, help="random seed")
@@ -258,15 +234,10 @@ if __name__ == "__main__":
     parser.add_argument('--trte', type=str, default='val', choices=['full', 'val'])
     args = parser.parse_args()
 
-    if args.dset == 'office-home':
-        names = ['Art', 'Clipart', 'Product', 'Real_World']
-        args.class_num = 65 
-    if args.dset == 'office':
-        names = ['amazon', 'dslr', 'webcam']
-        args.class_num = 31
-    if args.dset == 'office-caltech':
-        names = ['amazon', 'caltech', 'dslr', 'webcam']
-        args.class_num = 10
+    args.dset = 'imagenetc'
+    names = 'gaussian_noise, shot_noise, impulse_noise, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression'.split(', ')
+    print(names)
+    args.class_num = 1000
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     SEED = args.seed
@@ -276,12 +247,10 @@ if __name__ == "__main__":
     random.seed(SEED)
     # torch.backends.cudnn.deterministic = True
 
-    folder = 'data/'
-    args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
-    args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'     # 0-th个域作为源域，1st作为test集？？？
+    args.s_dset_path = '/home/yxue/datasets'
 
-    args.output_dir_src = osp.join(args.output, args.dset, names[args.s][0].upper())
-    args.name_src = names[args.s][0].upper()
+    args.output_dir_src = osp.join(args.output, args.dset, names[args.s])
+    args.name_src = names[args.s]
     if not osp.exists(args.output_dir_src):
         os.system('mkdir -p ' + args.output_dir_src)
     if not osp.exists(args.output_dir_src):
@@ -293,15 +262,15 @@ if __name__ == "__main__":
     
     train_source(args)
 
-    args.out_file = open(osp.join(args.output_dir_src, 'log_test.txt'), 'w')
-    for i in range(len(names)):
-        if i == args.s:
-            continue
-        args.t = i
-        args.name = names[args.s][0].upper() + names[args.t][0].upper()
+    # args.out_file = open(osp.join(args.output_dir_src, 'log_test.txt'), 'w')
+    # for i in range(len(names)):
+    #     if i == args.s:
+    #         continue
+    #     args.t = i
+    #     args.name = names[args.s][0].upper() + names[args.t][0].upper()
 
-        folder = 'data/'
-        args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
-        args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
+    #     folder = 'data/'
+    #     args.s_dset_path = folder + args.dset + '/' + names[args.s] + '_list.txt'
+    #     args.test_dset_path = folder + args.dset + '/' + names[args.t] + '_list.txt'
 
-        test_target(args)
+    #     test_target(args)
