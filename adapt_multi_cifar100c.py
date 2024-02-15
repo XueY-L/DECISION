@@ -1,5 +1,5 @@
 '''
-python adapt_multi_cifar100c.py --dset cifar100c --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt --batch_size 32
+python adapt_multi_cifar100c.py --dset cifar100c --max_epoch 15 --gpu_id 3 --output_src ckps/source/ --output ckps/adapt --batch_size 32
 '''
 import argparse
 import os, sys
@@ -56,7 +56,7 @@ def data_load(args):
             return len(self.data)
     
     dataset = TempSet(x_test, y_test)
-    dset_loaders["target"] = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)  # 50是我自己定的，因为一个batch200个
+    dset_loaders["target"] = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)  # 50是我自己定的，因为一个batch200个
     dset_loaders["target_"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False)
     dset_loaders["test"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False)
     
@@ -361,7 +361,7 @@ if __name__ == "__main__":
 
     args.savename = 'par_' + str(args.cls_par)
 
-    for t in range(10, 15):
+    for t in range(12, 15):
         args.t = t
         args.name_tar = names[args.t]
         args.output_dir = osp.join(args.output, args.dset, names[args.t])
@@ -377,7 +377,7 @@ if __name__ == "__main__":
             t1 = time.time()
             args.batch_idx = i
             acc = train_target(args)
-            f = open(f'{args.max_epoch}epochs_cifar100c-episodic_ggsj_target-{args.name_tar}.txt', 'a')
+            f = open(f'results/cifar100c_episodic_bs32_15epochs_3个False/cifar100c-episodic_ggsj_target-{args.name_tar}.txt', 'a')
             f.write(f'{str(acc)}\n')
             f.close()
             t2 = time.time()
