@@ -1,9 +1,10 @@
 '''
-python adapt_multi_imagenetc.py --dset imagenetc --t 0 --max_epoch 30 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt  --batch_idx 1
+python adapt_multi_imagenetc.py --dset imagenetc --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt
 '''
 import argparse
 import os, sys
 import os.path as osp
+import time
 import torchvision
 import numpy as np
 import torch
@@ -36,16 +37,7 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['nesterov'] = True
     return optimizer
 
-def data_load(args): 
-    dset_loaders = {}
-    dset_loaders["target"] = load_imagenetc(args.batch_size, 5, args.t_dset_path, False, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
-    dset_loaders["target_"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
-    dset_loaders["test"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='Res256Crop224', batch_idx=args.batch_idx)
-    
-    return dset_loaders
-
-def train_target(args):
-    dset_loaders = data_load(args)
+def model_load(args):
     # set base network
     if args.net[0:3] == 'res':
         netF_list = [network.ResBase(res_name=args.net).cuda() for i in range(len(args.src))]
@@ -89,6 +81,19 @@ def train_target(args):
     optimizer = optim.SGD(param_group)
     optimizer = op_copy(optimizer)
 
+    return netF_list, netB_list, netC_list, netG_list, optimizer
+
+def data_load(args): 
+    dset_loaders = {}
+    dset_loaders["target"] = load_imagenetc(args.batch_size, 5, args.t_dset_path, True, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
+    dset_loaders["target_"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
+    dset_loaders["test"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='Res256Crop224', batch_idx=args.batch_idx)
+    
+    return dset_loaders
+
+def train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer):
+    dset_loaders = data_load(args)
+    
     max_iter = args.max_epoch * len(dset_loaders["target"])
     interval_iter = max_iter // args.interval
     iter_num = 0
@@ -330,11 +335,12 @@ if __name__ == "__main__":
     args.src = ['gaussian_noise', 'glass_blur', 'snow', 'jpeg_compression']
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
-    SEED = args.seed
-    torch.manual_seed(SEED)
-    torch.cuda.manual_seed(SEED)
-    np.random.seed(SEED)
-    random.seed(SEED)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
 
     args.t_dset_path = '/home/yxue/datasets'
 
@@ -342,19 +348,29 @@ if __name__ == "__main__":
     for i in range(len(args.src)):
         args.output_dir_src.append(osp.join(args.output_src, args.dset, args.src[i]))
     print(args.output_dir_src)
-    args.output_dir = osp.join(args.output, args.dset, names[args.t])
 
-    args.name_tar = names[args.t]
+    netF_list, netB_list, netC_list, netG_list, optimizer = model_load(args)  # 改成episodic: 把这行放到367的for里面
 
-    if not osp.exists(args.output_dir):
-        os.system('mkdir -p ' + args.output_dir)
-    if not osp.exists(args.output_dir):
-        os.mkdir(args.output_dir)
+    for t in range(15):
+        args.t = t
+        args.name_tar = names[args.t]
+        args.output_dir = osp.join(args.output, args.dset, names[args.t])
 
-    args.savename = 'par_' + str(args.cls_par)
+        if not osp.exists(args.output_dir):
+            os.system('mkdir -p ' + args.output_dir)
+        if not osp.exists(args.output_dir):
+            os.mkdir(args.output_dir)
 
-    acc = train_target(args)
-    f = open(f'ggsj_target-{args.name_tar}.txt', 'a')
-    f.write(f'{str(acc)}\n')
-    f.close()
+        args.savename = 'par_' + str(args.cls_par)
+
+        for i in range(5000//50):
+            t1 = time.time()
+            args.batch_idx = i
+            args.batch_size = 17
+            acc = train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer)
+            f = open(f'ImageNetC-continual_ggsj_target-{args.name_tar}.txt', 'a')
+            f.write(f'{str(acc)}\n')
+            f.close()
+            t2 = time.time()
+            print(f'batch time: {t2-t1}')
 

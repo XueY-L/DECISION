@@ -1,9 +1,10 @@
 '''
-python adapt_multi_cifar100c.py --dset cifar100c --t 0 --max_epoch 30 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt  --batch_idx 0
+python adapt_multi_cifar100c.py --dset cifar100c --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt --batch_size 32
 '''
 import argparse
 import os, sys
 import os.path as osp
+import time
 import torchvision
 import numpy as np
 import torch
@@ -55,9 +56,9 @@ def data_load(args):
             return len(self.data)
     
     dataset = TempSet(x_test, y_test)
-    dset_loaders["target"] = DataLoader(dataset, batch_size=50, shuffle=True)  # 50是我自己定的，因为一个batch200个
-    dset_loaders["target_"] = DataLoader(dataset, batch_size=50*3, shuffle=False)
-    dset_loaders["test"] = DataLoader(dataset, batch_size=50*3, shuffle=False)
+    dset_loaders["target"] = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)  # 50是我自己定的，因为一个batch200个
+    dset_loaders["target_"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False)
+    dset_loaders["test"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False)
     
     return dset_loaders
 
@@ -357,19 +358,28 @@ if __name__ == "__main__":
     for i in range(len(args.src)):
         args.output_dir_src.append(osp.join(args.output_src, args.dset, args.src[i]))
     print(args.output_dir_src)
-    args.output_dir = osp.join(args.output, args.dset, names[args.t])
-
-    args.name_tar = names[args.t]
-
-    if not osp.exists(args.output_dir):
-        os.system('mkdir -p ' + args.output_dir)
-    if not osp.exists(args.output_dir):
-        os.mkdir(args.output_dir)
 
     args.savename = 'par_' + str(args.cls_par)
 
-    acc = train_target(args)
-    f = open(f'cifar100c_ggsj_target-{args.name_tar}.txt', 'a')
-    f.write(f'{str(acc)}\n')
-    f.close()
+    for t in range(10, 15):
+        args.t = t
+        args.name_tar = names[args.t]
+        args.output_dir = osp.join(args.output, args.dset, names[args.t])
+
+        if not osp.exists(args.output_dir):
+            os.system('mkdir -p ' + args.output_dir)
+        if not osp.exists(args.output_dir):
+            os.mkdir(args.output_dir)
+
+        args.savename = 'par_' + str(args.cls_par)
+
+        for i in range(10000//200):
+            t1 = time.time()
+            args.batch_idx = i
+            acc = train_target(args)
+            f = open(f'{args.max_epoch}epochs_cifar100c-episodic_ggsj_target-{args.name_tar}.txt', 'a')
+            f.write(f'{str(acc)}\n')
+            f.close()
+            t2 = time.time()
+            print(f'batch time: {t2-t1}')
 
