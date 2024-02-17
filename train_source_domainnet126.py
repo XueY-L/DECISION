@@ -1,5 +1,5 @@
 '''
-python train_source_domainnet126.py --dset domainnet126 --s 3 --max_epoch 50 --gpu_id 3 --output ckps/source/
+python train_source_domainnet126.py --dset domainnet126 --s 2 --max_epoch 50 --gpu_id 0 --output ckps/source/
 '''
 
 import argparse
@@ -43,23 +43,25 @@ def data_load(args):
         image_root='/home/yxue/datasets/DomainNet-126',
         src_domain=args.name_src,
         bs=args.batch_size,
-        phase='train'
+        phase='train',
+        shuffle=True,
     )
 
     test_loader = get_domainnet126(
         image_root='/home/yxue/datasets/DomainNet-126',
         src_domain=args.name_src,
         bs=args.batch_size,
-        phase='test'
+        phase='test',
+        shuffle=True,
     )
 
     num_train_batch = int(len(train_loader) * 0.9)
 
     train_data, test_data = [], []
-    for i, (data, label) in enumerate(train_loader):
+    for i, (data, label, _) in enumerate(train_loader):
         if i == num_train_batch: break
         train_data.append((data, label))
-    for i, (data, label) in enumerate(test_loader):
+    for i, (data, label, _) in enumerate(test_loader):
         if i < num_train_batch: continue
         test_data.append((data, label))
     print(len(train_data), len(test_data))
