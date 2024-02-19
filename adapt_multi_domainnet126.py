@@ -387,13 +387,13 @@ if __name__ == "__main__":
 
         args.savename = 'par_' + str(args.cls_par)
 
-        for i in range(400, math.ceil(LEN_SET_DomainNet126[args.name_tar] / 50)):   # math.ceil(LEN_SET_DomainNet126[args.name_tar] / 50)
+        for i in range(math.ceil(LEN_SET_DomainNet126[args.name_tar] / 50)):   # math.ceil(LEN_SET_DomainNet126[args.name_tar] / 50)
             t1 = time.time()
             netF_list, netB_list, netC_list, netG_list, optimizer = model_load(args)
             args.batch_idx = i
             args.batch_size = 17
             acc = train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer)
-            f = open(f'results/domainnet126_episodic_bs17/DomainNet126-continual_{args.src}_target-{args.name_tar}-[400:].txt', 'a')
+            f = open(f'results/domainnet126_episodic_bs17/DomainNet126-continual_{args.src}_target-{args.name_tar}.txt', 'a')
             f.write(f'{str(acc)}\n')
             f.close()
             t2 = time.time()
