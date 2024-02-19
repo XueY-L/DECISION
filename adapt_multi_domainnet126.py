@@ -1,5 +1,5 @@
 '''
-python adapt_multi_domainnet126.py --dset domainnet126 --max_epoch 15 --gpu_id 2 --output_src ckps/source/ --output ckps/adapt
+python adapt_multi_domainnet126.py --dset domainnet126 --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt
 '''
 import argparse
 import os, sys
@@ -351,7 +351,7 @@ if __name__ == "__main__":
     print(names)
     args.class_num = 126
 
-    args.src = ['real', 'sketch']
+    args.src = ['clipart', 'painting']
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     random.seed(args.seed)
@@ -375,7 +375,7 @@ if __name__ == "__main__":
         'sketch':24147,
     }
 
-    for t in [0]:
+    for t in [3]:
         args.t = t
         args.name_tar = names[args.t]
         args.output_dir = osp.join(args.output, args.dset, names[args.t])
@@ -387,13 +387,13 @@ if __name__ == "__main__":
 
         args.savename = 'par_' + str(args.cls_par)
 
-        for i in range(math.ceil(LEN_SET_DomainNet126[args.name_tar] / 50)): 
+        for i in range(400, math.ceil(LEN_SET_DomainNet126[args.name_tar] / 50)):   # math.ceil(LEN_SET_DomainNet126[args.name_tar] / 50)
             t1 = time.time()
             netF_list, netB_list, netC_list, netG_list, optimizer = model_load(args)
             args.batch_idx = i
             args.batch_size = 17
             acc = train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer)
-            f = open(f'results/domainnet126_episodic_bs17/DomainNet126-continual_{args.src}_target-{args.name_tar}.txt', 'a')
+            f = open(f'results/domainnet126_episodic_bs17/DomainNet126-continual_{args.src}_target-{args.name_tar}-[400:].txt', 'a')
             f.write(f'{str(acc)}\n')
             f.close()
             t2 = time.time()
