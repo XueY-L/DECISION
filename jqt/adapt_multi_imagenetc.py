@@ -1,5 +1,5 @@
 '''
-python adapt_multi_cifar100c.py --dset cifar100c --gpu_id 2 --output_src ckps/source/ --output ckps/adapt --batch_size 32
+python adapt_multi_imagenetc.py --dset imagenetc --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt
 '''
 import argparse
 import os, sys
@@ -12,13 +12,14 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms
 import network, loss
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
+from data_list import ImageList, ImageList_idx
 import random, pdb, math, copy
 from tqdm import tqdm
 from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
 
-from robustbench.data import load_imagenetc, load_cifar100c
+from robustbench.data import load_imagenetc
 from robustbench.utils import load_model
 from robustbench.model_zoo.enums import ThreatModel
 
@@ -36,35 +37,12 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['nesterov'] = True
     return optimizer
 
-def data_load(args): 
-    dset_loaders = {}
-    x_test, y_test = load_cifar100c(10000, 5, args.t_dset_path, True, [args.name_tar])
-    x_test, y_test = x_test[ args.batch_idx*200 : (args.batch_idx+1)*200 ], y_test[ args.batch_idx*200 : (args.batch_idx+1)*200 ]
-    print(x_test.size(), y_test.size())
-    
-    class TempSet(Dataset):
-        def __init__(self, data, labels):
-            super(TempSet, self).__init__()
-            self.data = data
-            self.labels = labels
-
-        def __getitem__(self, index):
-            return self.data[index], self.labels[index], index
-
-        def __len__(self):
-            return len(self.data)
-    
-    dataset = TempSet(x_test, y_test)
-    dset_loaders["target"] = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.worker)  
-    dset_loaders["target_"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False, num_workers=args.worker)
-    dset_loaders["test"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False, num_workers=args.worker)
-    
-    return dset_loaders
-
-def train_target(args):
-    dset_loaders = data_load(args)
+def model_load(args):
     # set base network
-    netF_list = [network.ResNextBase() for i in range(len(args.src))]  # 特征提取器
+    if args.net[0:3] == 'res':
+        netF_list = [network.ResBase(res_name=args.net).cuda() for i in range(len(args.src))]
+    elif args.net[0:3] == 'vgg':
+        netF_list = [network.VGGBase(vgg_name=args.net).cuda() for i in range(len(args.src))]
 
     w = 2*torch.rand((len(args.src),))-1  # 权重？
     print(w)
@@ -103,6 +81,19 @@ def train_target(args):
     optimizer = optim.SGD(param_group)
     optimizer = op_copy(optimizer)
 
+    return netF_list, netB_list, netC_list, netG_list, optimizer
+
+def data_load(args): 
+    dset_loaders = {}
+    dset_loaders["target"] = load_imagenetc(args.batch_size, 5, args.t_dset_path, True, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
+    dset_loaders["target_"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='train', batch_idx=args.batch_idx)
+    dset_loaders["test"] = load_imagenetc(args.batch_size*3, 5, args.t_dset_path, False, [args.name_tar], prepr='Res256Crop224', batch_idx=args.batch_idx)
+    
+    return dset_loaders
+
+def train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer):
+    dset_loaders = data_load(args)
+    
     max_iter = args.max_epoch * len(dset_loaders["target"])
     interval_iter = max_iter // args.interval
     iter_num = 0
@@ -312,8 +303,8 @@ if __name__ == "__main__":
     parser.add_argument('--max_epoch', type=int, default=15, help="max iterations")
     parser.add_argument('--interval', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
-    parser.add_argument('--worker', type=int, default=32, help="number of workers")
-    parser.add_argument('--dset', type=str, default='office-caltech', choices=['office', 'office-home', 'office-caltech', 'imagenetc', 'cifar100c'])
+    parser.add_argument('--worker', type=int, default=4, help="number of workers")
+    parser.add_argument('--dset', type=str, default='office-caltech', choices=['office', 'office-home', 'office-caltech', 'imagenetc'])
     parser.add_argument('--lr', type=float, default=1*1e-2, help="learning rate")
     parser.add_argument('--net', type=str, default='resnet50', help="vgg16, resnet50, res101")
     parser.add_argument('--seed', type=int, default=2021, help="random seed")
@@ -336,10 +327,10 @@ if __name__ == "__main__":
     parser.add_argument('--output_src', type=str, default='ckps/source')
     args = parser.parse_args()
     
-    args.dset = 'cifar100c'
+    args.dset = 'imagenetc'
     names = 'gaussian_noise, shot_noise, impulse_noise, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression'.split(', ')
     print(names)
-    args.class_num = 100
+    args.class_num = 1000
 
     args.src = ['gaussian_noise', 'glass_blur', 'snow', 'jpeg_compression']
 
@@ -358,9 +349,9 @@ if __name__ == "__main__":
         args.output_dir_src.append(osp.join(args.output_src, args.dset, args.src[i]))
     print(args.output_dir_src)
 
-    args.savename = 'par_' + str(args.cls_par)
+    netF_list, netB_list, netC_list, netG_list, optimizer = model_load(args)  # 改成episodic: 把这行放到367的for里面
 
-    for t in range(1):
+    for t in range(15):
         args.t = t
         args.name_tar = names[args.t]
         args.output_dir = osp.join(args.output, args.dset, names[args.t])
@@ -372,11 +363,12 @@ if __name__ == "__main__":
 
         args.savename = 'par_' + str(args.cls_par)
 
-        for i in range(10000//200):
+        for i in range(5000//50):
             t1 = time.time()
             args.batch_idx = i
-            acc = train_target(args)
-            f = open(f'cifar100c-episodic_ggsj_target-{args.name_tar}.txt', 'a')
+            args.batch_size = 17
+            acc = train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer)
+            f = open(f'ImageNetC-continual_ggsj_target-{args.name_tar}.txt', 'a')
             f.write(f'{str(acc)}\n')
             f.close()
             t2 = time.time()
