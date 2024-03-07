@@ -351,7 +351,7 @@ if __name__ == "__main__":
 
     netF_list, netB_list, netC_list, netG_list, optimizer = model_load(args)  # 改成episodic: 把这行放到367的for里面
 
-    for t in range(15):
+    for t in range(5, 10):
         args.t = t
         args.name_tar = names[args.t]
         args.output_dir = osp.join(args.output, args.dset, names[args.t])
@@ -367,7 +367,7 @@ if __name__ == "__main__":
             t1 = time.time()
             args.batch_idx = i
             acc = train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer)
-            f = open(f'results/imagenet_episodic_bs50/ImageNetC-continual_ggsj_target-{args.name_tar}_bs{args.batch_size}.txt', 'a')
+            f = open(f'results/imagenet_episodic_bs50/ImageNetC_ggsj_target-{args.name_tar}_bs{args.batch_size}.txt', 'a')
             f.write(f'{str(acc)}\n')
             f.close()
             t2 = time.time()
