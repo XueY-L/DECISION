@@ -1,5 +1,5 @@
 '''
-python adapt_multi_imagenetc.py --dset imagenetc --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt
+python adapt_multi_imagenetc.py --dset imagenetc --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt --batch_size 50
 '''
 import argparse
 import os, sys
@@ -366,9 +366,8 @@ if __name__ == "__main__":
         for i in range(5000//50):
             t1 = time.time()
             args.batch_idx = i
-            args.batch_size = 17
             acc = train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer)
-            f = open(f'ImageNetC-continual_ggsj_target-{args.name_tar}.txt', 'a')
+            f = open(f'results/imagenet_episodic_bs50/ImageNetC-continual_ggsj_target-{args.name_tar}_bs{args.batch_size}.txt', 'a')
             f.write(f'{str(acc)}\n')
             f.close()
             t2 = time.time()

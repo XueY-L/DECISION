@@ -52,15 +52,15 @@ class ResBase(nn.Module):
     def __init__(self, res_name, path=None):
         super(ResBase, self).__init__()
         model_resnet = res_dict[res_name](pretrained=True)
-        if path and path.find('DomainNet126'):
+        if path and 'DomainNet126' in path:
             model_resnet = res_dict[res_name](num_classes=126)
             model_resnet.load_state_dict(torch.load(path)['net'])
-        elif path and path.find('imagenet'):
+        elif path and 'imagenet' in path:
             model_resnet = nn.Sequential(
                 OrderedDict([
                     ('model', model_resnet),
                 ]))
-            model_resnet.load_state_dict(torch.load(path)['net'], strict=False)  # 没有normalize
+            model_resnet.load_state_dict(torch.load(path)['model'], strict=False)  # 没有normalize
             model_resnet = model_resnet.model
 
         self.conv1 = model_resnet.conv1

@@ -196,7 +196,7 @@ def load_imagenetc(
     # imagenet = CustomImageFolder(data_folder_path, transforms_test)
     imagenet = TempSet(data_path[batch_idx*50 : (batch_idx+1)*50], labels[batch_idx*50 : (batch_idx+1)*50], transforms_test)
 
-    loader = data.DataLoader(imagenet, batch_size=n_examples, shuffle=shuffle, num_workers=16)
+    loader = data.DataLoader(imagenet, batch_size=n_examples, shuffle=shuffle, num_workers=4)
     return loader
 
     # x_test, y_test, paths = next(iter(loader))
