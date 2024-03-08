@@ -1,5 +1,5 @@
 '''
-python adapt_multi_cifar100c.py --dset cifar100c --gpu_id 2 --output_src ckps/source/ --output ckps/adapt --batch_size 32
+python adapt_multi_cifar100c.py --dset cifar100c --gpu_id 2 --output_src ckps/source/ --output ckps/adapt --batch_size 200 --worker 4
 '''
 import argparse
 import os, sys
@@ -36,6 +36,32 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
         param_group['nesterov'] = True
     return optimizer
 
+def image_train(resize_size=36, crop_size=32, alexnet=False):
+    # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+
+    return transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((resize_size, resize_size)),
+        transforms.RandomCrop(crop_size),
+        #transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize
+    ])
+
+def image_test(resize_size=36, crop_size=32, alexnet=False):
+    # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+
+    return transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((resize_size, resize_size)),
+        transforms.CenterCrop(crop_size),
+        transforms.ToTensor(),
+        normalize
+    ])
+
+
 def data_load(args): 
     dset_loaders = {}
     x_test, y_test = load_cifar100c(10000, 5, args.t_dset_path, True, [args.name_tar])
@@ -43,20 +69,39 @@ def data_load(args):
     print(x_test.size(), y_test.size())
     
     class TempSet(Dataset):
-        def __init__(self, data, labels):
+        def __init__(self, data, labels, transform=None, transform1=None, target_transform=None):
             super(TempSet, self).__init__()
             self.data = data
             self.labels = labels
 
+            self.transform = transform
+            self.target_transform = target_transform
+            self.transform1 = transform1
+
         def __getitem__(self, index):
-            return self.data[index], self.labels[index], index
+            img = self.data[index]
+            target = self.labels[index]
+
+            if self.transform is not None:
+                img1 = self.transform(img)
+            if self.transform1 is not None:
+                img2 = self.transform1(img)
+
+            if self.target_transform is not None:
+                target = self.target_transform(target)
+            if self.transform1 is not None:
+                return [img1,img2], target, index
+            else:
+                return img1, target, index
 
         def __len__(self):
             return len(self.data)
+  
     
-    dataset = TempSet(x_test, y_test)
+    dataset = TempSet(x_test, y_test, transform=image_train())
     dset_loaders["target"] = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.worker)  
     dset_loaders["target_"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False, num_workers=args.worker)
+    dataset = TempSet(x_test, y_test, transform=image_test())
     dset_loaders["test"] = DataLoader(dataset, batch_size=args.batch_size*3, shuffle=False, num_workers=args.worker)
     
     return dset_loaders
