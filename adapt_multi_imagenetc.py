@@ -349,7 +349,7 @@ if __name__ == "__main__":
         args.output_dir_src.append(osp.join(args.output_src, args.dset, args.src[i]))
     print(args.output_dir_src)
 
-    for t in range(10, 15):
+    for t in range(9, 10):
         args.t = t
         args.name_tar = names[args.t]
         args.output_dir = osp.join(args.output, args.dset, names[args.t])
