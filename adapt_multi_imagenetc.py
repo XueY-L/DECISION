@@ -1,5 +1,5 @@
 '''
-python adapt_multi_imagenetc.py --dset imagenetc --max_epoch 15 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt --batch_size 50
+python adapt_multi_imagenetc.py --dset imagenetc --gpu_id 0 --output_src ckps/source/ --output ckps/adapt --batch_size 50
 '''
 import argparse
 import os, sys
@@ -349,9 +349,7 @@ if __name__ == "__main__":
         args.output_dir_src.append(osp.join(args.output_src, args.dset, args.src[i]))
     print(args.output_dir_src)
 
-    netF_list, netB_list, netC_list, netG_list, optimizer = model_load(args)  # 改成episodic: 把这行放到367的for里面
-
-    for t in range(5, 10):
+    for t in range(10, 15):
         args.t = t
         args.name_tar = names[args.t]
         args.output_dir = osp.join(args.output, args.dset, names[args.t])
@@ -365,6 +363,7 @@ if __name__ == "__main__":
 
         for i in range(5000//50):
             t1 = time.time()
+            netF_list, netB_list, netC_list, netG_list, optimizer = model_load(args)  # 改成episodic: 把这行放到367的for里面
             args.batch_idx = i
             acc = train_target(args, netF_list, netB_list, netC_list, netG_list, optimizer)
             f = open(f'results/imagenet_episodic_bs50/ImageNetC_ggsj_target-{args.name_tar}_bs{args.batch_size}.txt', 'a')
