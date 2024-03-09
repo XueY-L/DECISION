@@ -77,7 +77,7 @@ class ImageList(Dataset):
     
 
 def get_domainnet126(image_root, src_domain, bs, phase, shuffle, batch_idx=None):
-    if batch_idx != None:  # 训练源模型用的
+    if batch_idx == None:  # 训练源模型用的
         train_transform = transforms.Compose([
             transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
             transforms.RandomHorizontalFlip(),
@@ -122,6 +122,6 @@ def get_domainnet126(image_root, src_domain, bs, phase, shuffle, batch_idx=None)
         batch_size=bs,
         shuffle=shuffle,
         pin_memory=True,
-        num_workers=16,
+        num_workers=2,
     )
     return loader
