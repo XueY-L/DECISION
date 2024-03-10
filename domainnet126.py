@@ -76,26 +76,26 @@ class ImageList(Dataset):
         return len(self.item_list)
     
 
-def get_domainnet126(image_root, src_domain, bs, phase, shuffle, batch_idx=None):
-    if batch_idx == None:  # 训练源模型用的
-        train_transform = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
-            transforms.RandomGrayscale(),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-    else: # new_aug
-        train_transform = transforms.Compose([
-            transforms.Resize((256, 256)),
-            transforms.RandomCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+def get_domainnet126(args, image_root, src_domain, bs, phase, shuffle, batch_idx=None):
+    # if batch_idx == None:  # 训练源模型用的
+    #     train_transform = transforms.Compose([
+    #         transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+    #         transforms.RandomHorizontalFlip(),
+    #         transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+    #         transforms.RandomGrayscale(),
+    #         transforms.ToTensor(),
+    #         transforms.Normalize(
+    #             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    #     ])
+    # else: # new_aug
+    train_transform = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.RandomCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
     
     test_transform = transforms.Compose([
         transforms.Resize((256, 256)),
@@ -122,6 +122,6 @@ def get_domainnet126(image_root, src_domain, bs, phase, shuffle, batch_idx=None)
         batch_size=bs,
         shuffle=shuffle,
         pin_memory=True,
-        num_workers=2,
+        num_workers=args.worker,
     )
     return loader

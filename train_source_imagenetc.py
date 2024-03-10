@@ -1,5 +1,5 @@
 '''
-python train_source_domainnet126.py --dset domainnet126 --s 3 --max_epoch 100 --gpu_id 3 --output ckps/source/ --worker 8
+python train_source_imagenetc.py --dset imagenetc --s 14 --max_epoch 100 --gpu_id 0 --output ckps/source/
 '''
 
 import argparse
@@ -21,7 +21,9 @@ from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
 
-from domainnet126 import get_domainnet126
+from robustbench.data import load_imagenetc
+from robustbench.utils import load_model
+from robustbench.model_zoo.enums import ThreatModel
 
 
 def op_copy(optimizer):
@@ -39,24 +41,8 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
     return optimizer
 
 def data_load(args): 
-    train_loader = get_domainnet126(
-        args=args,
-        image_root='/home/yxue/datasets/DomainNet-126',
-        src_domain=args.name_src,
-        bs=args.batch_size,
-        phase='train',
-        shuffle=True,
-    )
-
-    test_loader = get_domainnet126(
-        args=args,
-        image_root='/home/yxue/datasets/DomainNet-126',
-        src_domain=args.name_src,
-        bs=args.batch_size,
-        phase='test',
-        shuffle=True,
-    )
-
+    train_loader = load_imagenetc(args.batch_size, 1, args.s_dset_path, True, [args.name_src], prepr='train')
+    test_loader = load_imagenetc(args.batch_size, 1, args.s_dset_path, True, [args.name_src], prepr='Res256Crop224')
     num_train_batch = int(len(train_loader) * 0.9)
 
     train_data, test_data = [], []
@@ -111,8 +97,8 @@ def train_source(args):
     dset_loaders = data_load(args)
 
     # set base network
-    path = f'/home/yxue/model_fusion_dnn/ckpt_res50_domainnet126/checkpoint/ckpt_{args.name_src}__sgd_lr-s0.001_lr-w-1.0_bs32_seed42_source-[]_DomainNet126_resnet50-1.0x_SingleTraining-DomainNet126_lrd-[-2, -1]_wd-0.0005.pth'
-    
+    path = f'/home/yxue/model_fusion_tta/imagenet/checkpoint/ckpt_[\'{args.name_src}\']_[1].pt'
+
     if args.net[0:3] == 'res':
         netF = network.ResBase(res_name=args.net, path=path).cuda()  # 特征提取器
     elif args.net[0:3] == 'vgg':
@@ -120,6 +106,8 @@ def train_source(args):
 
     netB = network.feat_bottleneck(type=args.classifier, feature_dim=netF.in_features, bottleneck_dim=args.bottleneck).cuda()  # 分类器+BN
     netC = network.feat_classifier(type=args.layer, class_num = args.class_num, bottleneck_dim=args.bottleneck).cuda()  # 又是个分类器
+
+    print(netC.fc)
 
     # 模型的组成是 F->B->C
 
@@ -233,7 +221,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_epoch', type=int, default=20, help="max iterations")
     parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
-    parser.add_argument('--dset', type=str, default='office-home', choices=['office', 'office-home', 'office-caltech', 'imagenetc', 'domainnet126'])
+    parser.add_argument('--dset', type=str, default='office-home', choices=['office', 'office-home', 'office-caltech', 'imagenetc'])
     parser.add_argument('--lr', type=float, default=1e-2, help="learning rate")
     parser.add_argument('--net', type=str, default='resnet50', help="vgg16, resnet50, resnet101")
     parser.add_argument('--seed', type=int, default=2021, help="random seed")
@@ -246,10 +234,10 @@ if __name__ == "__main__":
     parser.add_argument('--trte', type=str, default='val', choices=['full', 'val'])
     args = parser.parse_args()
 
-    args.dset = 'domainnet126'
-    names = 'clipart, painting, real, sketch'.split(', ')
+    args.dset = 'imagenetc'
+    names = 'gaussian_noise, shot_noise, impulse_noise, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression'.split(', ')
     print(names)
-    args.class_num = 126
+    args.class_num = 1000
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     SEED = args.seed
@@ -260,7 +248,7 @@ if __name__ == "__main__":
     # torch.backends.cudnn.deterministic = True
 
     args.s_dset_path = '/home/yxue/datasets'
-    
+
     args.output_dir_src = osp.join(args.output, args.dset, names[args.s])
     args.name_src = names[args.s]
     if not osp.exists(args.output_dir_src):
