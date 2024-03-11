@@ -1,4 +1,4 @@
-path = '/home/yxue/DECISION/results/domainnet126_bs50/DomainNet126_[\'real\', \'sketch\']_target-painting_bs50.txt'
+path = '/home/yxue/DECISION/results/domainnet126_bs50_原来的aug训的源模型_15epochs/DomainNet126_[\'clipart\', \'painting\']_target-sketch_bs50.txt'
 
 f = open(path, 'r')
 
