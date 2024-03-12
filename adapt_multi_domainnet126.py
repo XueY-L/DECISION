@@ -1,5 +1,5 @@
 '''
-python adapt_multi_domainnet126.py --dset domainnet126 --gpu_id 0 --output_src ckps/source/ --output ckps/adapt --batch_size 50 --worker 0 --max_epoch 10 --interval 10
+python adapt_multi_domainnet126.py --dset domainnet126 --gpu_id 1 --output_src ckps/source/ --output ckps/adapt --batch_size 50 --worker 0 --max_epoch 15 --interval 15
 '''
 import argparse
 import os, sys
@@ -355,7 +355,7 @@ if __name__ == "__main__":
     print(names)
     args.class_num = 126
 
-    args.src = ['real', 'sketch']
+    args.src = ['clipart', 'painting']
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     random.seed(args.seed)
@@ -379,7 +379,7 @@ if __name__ == "__main__":
         'sketch':24147,
     }
 
-    for t in [1]:
+    for t in [3]:
         args.t = t
         args.name_tar = names[args.t]
         args.output_dir = osp.join(args.output, args.dset, names[args.t])
